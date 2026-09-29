@@ -1,121 +1,168 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import './App.css'
 
+type ScheduleEvent = {
+  id: string
+  title: string
+  description: string | null
+  location: string | null
+  starts_at: string
+  ends_at: string
+}
+
+type Schedule = {
+  event_start_at: string
+  event_end_at: string
+  events: ScheduleEvent[]
+}
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api').replace(/\/$/, '')
+const timeFormatter = new Intl.DateTimeFormat('en-CA', {
+  hour: 'numeric',
+  minute: '2-digit',
+  timeZone: 'America/Toronto',
+})
+const dateFormatter = new Intl.DateTimeFormat('en-CA', {
+  weekday: 'long',
+  month: 'long',
+  day: 'numeric',
+  timeZone: 'America/Toronto',
+})
+
+function eventTime(event: ScheduleEvent) {
+  return `${timeFormatter.format(new Date(event.starts_at))} – ${timeFormatter.format(new Date(event.ends_at))}`
+}
+
 function App() {
-  const [count, setCount] = useState(0)
+  const [schedule, setSchedule] = useState<Schedule | null>(null)
+  const [now, setNow] = useState(() => new Date())
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const loadSchedule = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/schedule`, {
+        headers: { Accept: 'application/json' },
+      })
+      if (!response.ok) throw new Error(`Schedule request failed (${response.status})`)
+      setSchedule((await response.json()) as Schedule)
+      setError(null)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not load the schedule')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- initial remote data load
+    void loadSchedule()
+    const clock = window.setInterval(() => setNow(new Date()), 15_000)
+    const refresh = window.setInterval(() => void loadSchedule(), 60_000)
+    return () => {
+      window.clearInterval(clock)
+      window.clearInterval(refresh)
+    }
+  }, [loadSchedule])
+
+  const state = useMemo(() => {
+    const timestamp = now.getTime()
+    const events = schedule?.events ?? []
+    const current = events.filter(
+      (event) =>
+        new Date(event.starts_at).getTime() <= timestamp &&
+        timestamp < new Date(event.ends_at).getTime(),
+    )
+    const next = events.find((event) => new Date(event.starts_at).getTime() > timestamp) ?? null
+    return { current, next }
+  }, [now, schedule])
+
+  const featured = state.current[0] ?? state.next
+  const isLive = state.current.length > 0
+  const eventHasEnded = schedule ? now >= new Date(schedule.event_end_at) : false
+  const remainingEvents = schedule?.events
+    .filter((event) => new Date(event.ends_at) > now && event.id !== featured?.id)
+    .slice(0, 3) ?? []
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <main className="status-page">
+      <header className="status-header">
+        <span>Hack the Valley 11</span>
+        <div className="header-date">
+          <time dateTime={now.toISOString()}>{dateFormatter.format(now)}</time>
+          <span>{timeFormatter.format(now)} ET</span>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
+      </header>
+
+      <section className="status-content" aria-live="polite">
+        {loading ? (
+          <>
+            <p className="status-kicker">Live schedule</p>
+            <h1 className="status-title pulse">Loading</h1>
+            <p className="status-message">Finding out what’s happening now…</p>
+          </>
+        ) : error ? (
+          <>
+            <p className="status-kicker">Live schedule</p>
+            <h1 className="status-title">Oops!</h1>
+            <p className="status-message">We couldn’t load the schedule.</p>
+            <p className="status-detail">{error}</p>
+            <button className="status-button" type="button" onClick={() => void loadSchedule()}>
+              Try Again
+            </button>
+          </>
+        ) : featured ? (
+          <>
+            <p className={`status-kicker ${isLive ? 'is-live' : ''}`}>
+              {isLive && <span className="live-dot" />}
+              {isLive ? 'Happening now' : 'Up next'}
+            </p>
+            <h1 className="status-title event-title">{featured.title}</h1>
+            <p className="status-message">
+              {dateFormatter.format(new Date(featured.starts_at))}
+              <br />
+              {eventTime(featured)}
+            </p>
+            {(featured.location || featured.description) && (
+              <div className="event-details">
+                {featured.location && <p className="status-detail event-location">{featured.location}</p>}
+                {featured.description && <p className="status-detail">{featured.description}</p>}
+              </div>
+            )}
+            {state.current.length > 1 && (
+              <p className="simultaneous">
+                +{state.current.length - 1} more event{state.current.length > 2 ? 's' : ''} live
+              </p>
+            )}
+          </>
+        ) : (
+          <>
+            <p className="status-kicker">Live schedule</p>
+            <h1 className="status-title">{eventHasEnded ? 'That’s a wrap!' : 'Stay tuned'}</h1>
+            <p className="status-message">
+              {eventHasEnded ? 'Hack the Valley 11 is complete.' : 'No event is scheduled yet.'}
+            </p>
+            <p className="status-detail">
+              {eventHasEnded ? 'Thank you for building with us.' : 'Check back soon for live updates.'}
+            </p>
+          </>
+        )}
       </section>
 
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+      {remainingEvents.length > 0 && (
+        <aside className="upcoming" aria-labelledby="upcoming-title">
+          <p id="upcoming-title">Coming up</p>
+          <div className="upcoming-list">
+            {remainingEvents.map((event) => (
+              <article key={event.id}>
+                <time dateTime={event.starts_at}>{timeFormatter.format(new Date(event.starts_at))}</time>
+                <span>{event.title}</span>
+              </article>
+            ))}
+          </div>
+        </aside>
+      )}
+    </main>
   )
 }
 
