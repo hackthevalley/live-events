@@ -142,11 +142,6 @@
   font-weight: 600;
 }
 
-.event-location::before {
-  content: '⌖  ';
-  color: #f6c7fc;
-}
-
 .simultaneous {
   margin: 20px 0 0;
   color: #b8c8ff;
