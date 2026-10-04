@@ -13,18 +13,18 @@ cp .env.example .env
 npm run dev
 ```
 
-`VITE_API_BASE_URL` must point to the backend API root, including `/api` and
-without a trailing slash:
+`VITE_BACKEND_URL` must point to the backend origin without `/api` or a
+trailing slash:
 
 ```dotenv
-VITE_API_BASE_URL=http://localhost:8000/api
+VITE_BACKEND_URL=http://localhost:8000
 ```
 
 The application requests the schedule from
-`${VITE_API_BASE_URL}/schedule`. When the variable is omitted, local
-development defaults to `http://localhost:8000/api`.
+`${VITE_BACKEND_URL}/api/schedule`. When the variable is omitted, local
+development defaults to `http://localhost:8000`.
 
-Set `VITE_API_BASE_URL` in the hosting provider's environment variables for
+Set `VITE_BACKEND_URL` in the hosting provider's environment variables for
 preview and production deployments. Vite embeds this value at build time, so
 the site must be rebuilt after it changes.
 

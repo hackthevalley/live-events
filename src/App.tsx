@@ -16,7 +16,8 @@ type Schedule = {
   events: ScheduleEvent[]
 }
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api').replace(/\/$/, '')
+const BACKEND_URL = (import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000').replace(/\/+$/, '')
+const API_BASE_URL = `${BACKEND_URL}/api`
 const timeFormatter = new Intl.DateTimeFormat('en-CA', {
   hour: 'numeric',
   minute: '2-digit',
